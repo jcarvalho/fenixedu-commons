@@ -18,14 +18,12 @@
  */
 package org.fenixedu.commons.configuration;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,22 +36,7 @@ public class ConfigurationInvocationHandler extends AbstractInvocationHandler {
 
     public static final String NULL_DEFAULT = "AbQAGOvdWgQgHLOH5hSk";
 
-    protected static final Properties properties = new Properties();
-
     private static final Map<Class<?>, Object> configs = new HashMap<>();
-
-    static {
-        String propertiesFile = System.getProperty("CONFIGURATION_PROPERTIES", "/configuration.properties");
-        try (InputStream inputStream = ConfigurationInvocationHandler.class.getResourceAsStream(propertiesFile)) {
-            if (inputStream != null) {
-                properties.load(inputStream);
-            } else {
-                logger.warn("{} not found in classpath. Relying on default values", propertiesFile);
-            }
-        } catch (IOException e) {
-            throw new Error(propertiesFile + "could not be read.", e);
-        }
-    }
 
     private final Map<String, Object> cache = new HashMap<>();
 
@@ -81,7 +64,7 @@ public class ConfigurationInvocationHandler extends AbstractInvocationHandler {
     }
 
     private Object obtainValue(Class<?> type, String key, String defaultValue) {
-        Object value = properties.getProperty(key, defaultValue.equals(NULL_DEFAULT) ? null : defaultValue);
+        Object value = getProperty(key, defaultValue.equals(NULL_DEFAULT) ? null : defaultValue);
         if (value == null) {
             return null;
         }
@@ -103,22 +86,29 @@ public class ConfigurationInvocationHandler extends AbstractInvocationHandler {
         return value;
     }
 
+    private Object getProperty(String key, String defaultValue) {
+        return ConfigurationProperties.getProperty(key).orElseGet(() -> System.getProperty(key, defaultValue));
+    }
+
     private Map<String, String> obtainValueMap(String patternString, String defaultValue) {
         Map<String, String> value = new HashMap<>();
         Pattern pattern = Pattern.compile(patternString.replace("*", "(.*)"));
-        for (Object property : properties.keySet()) {
-            String propertyName = property.toString();
+        ConfigurationProperties.availableProperties().forEach(propertyName -> {
             Matcher matcher = pattern.matcher(propertyName);
             if (matcher.matches()) {
                 String key = matcher.group(1);
-                value.put(key, properties.getProperty(propertyName, defaultValue.equals(NULL_DEFAULT) ? null : defaultValue));
+                value.put(key, (String) getProperty(propertyName, defaultValue.equals(NULL_DEFAULT) ? null : defaultValue));
             }
-        }
+        });
         return value;
     }
 
-    public static Properties rawProperties() {
-        return (Properties) properties.clone();
+    public void reload() {
+        cache.clear();
+    }
+
+    static Stream<Object> all() {
+        return configs.values().stream();
     }
 
     /**
